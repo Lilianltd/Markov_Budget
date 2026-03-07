@@ -1,0 +1,3 @@
+[submodule "adsimulator_graph_generator/adsimulator"]
+	path = adsimulator_graph_generator/adsimulator
+	url = https://github.com/nicolas-carolo/adsimulator
