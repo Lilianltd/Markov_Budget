@@ -1,11 +1,17 @@
 #!/bin/bash
 
-# Configuration
+AD_PATH="${AD_PATH:-adsimulator}"
+# Verify it actually exists/is executable before continuing
+if ! command -v "$AD_PATH" &> /dev/null; then
+    echo "[-] Error: Cannot find adsimulator at '$AD_PATH'."
+    echo "    Either activate your environment or set the AD_PATH variable:"
+    echo "    export AD_PATH=/path/to/your/adsimulator"
+    exit 1
+fi
 
-AD_PATH="/home/lilian/miniconda3/bin/adsimulator"
 APOC_CONF="/etc/neo4j/apoc.conf"
 EXPORT_PATH="/var/lib/neo4j/import/export.json"
-DATASET_DIR="/mnt/Drive/IMT/3A/AIDL/adsimulator_graph_generator/Dataset"
+DATASET_DIR="./Dataset"
 NUM_GRAPHS=2
 
 # Ensure output directory exists
@@ -35,7 +41,7 @@ for i in $(seq 1 $NUM_GRAPHS); do
     "$AD_PATH" <<EOF
 connect
 setdomain INSTANCE${i}.LOCAL
-setparams ./Dataset/adsimulator_config_${i}.json
+setparams ./Dataset/config/adsimulator_config_${i}.json
 generate
 exit
 EOF
@@ -59,4 +65,4 @@ EOF
     fi
 done
 
-echo "[+] ALL DONE. Formatted graph matrices (.npy) generated."
+echo "[+] ALL DONE"

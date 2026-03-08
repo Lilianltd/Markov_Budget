@@ -29,7 +29,7 @@ def generate_config(index):
     diff = 100 - sum(config["ACLsProbability"].values())
     config["ACLsProbability"]["AddMember"] += diff
 
-    filename = f"./Dataset/adsimulator_config_{index}.json"
+    filename = f"./Dataset/config/adsimulator_config_{index}.json"
     with open(filename, "w") as f:
         json.dump(config, f, indent=4)
         
