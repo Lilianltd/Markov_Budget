@@ -6,12 +6,12 @@ import os
 def generate_config(index):
     # Randomize core adsimulator properties for variet, keep it simple for the moment as i don't understand fully what are all the parameters and if they are usefull for us later on
     config = {
-        "nComputers": random.randint(1, 4),
-        "nUsers": random.randint(1, 2),
-        "CanRDPFromUserPercentage": random.randint(5, 30),
-        "CanRDPFromGroupPercentage": random.randint(5, 30),
-        "CanPSRemoteFromUserPercentage": random.randint(5, 20),
-        "CanPSRemoteFromGroupPercentage": random.randint(5, 20),
+        "nComputers": random.randint(30, 80),
+        "nUsers": random.randint(50, 100),
+        "CanRDPFromUserPercentage": random.randint(20, 50),
+        "CanRDPFromGroupPercentage": random.randint(20, 50),
+        "CanPSRemoteFromUserPercentage": random.randint(15, 30),
+        "CanPSRemoteFromGroupPercentage": random.randint(15, 30),
         "ACLsProbability": {
             "GenericAll": random.randint(5, 15),
             "GenericWrite": random.randint(5, 15),

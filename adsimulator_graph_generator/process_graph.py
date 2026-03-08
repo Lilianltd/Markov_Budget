@@ -104,24 +104,25 @@ def process_and_save_dataset(jsonl_path, out_json_path):
     print(f"[*] Processing {jsonl_path}...")
     nodes_data, edges_data = load_jsonl(jsonl_path)
     
-    # 1. Construction du graphe global
     G_full = nx.DiGraph()
     for n in nodes_data:
         node_id = str(n['id'])
         G_full.add_node(node_id, labels=n.get('labels', []), **n.get('properties', {}))
 
     for e in edges_data:
-        G_full.add_edge(str(e['start']['id']), str(e['end']['id']), type=e['label'], **e.get('properties', {}))
+        u = str(e['start']['id'])
+        v = str(e['end']['id'])
+        G_full.add_edge(u, v, type=e['label'], **e.get('properties', {}))
 
-    # 2. Identification Globale
+    #TODO In fact the graph can be not linking the user to the domain admin
     full_nodes_list = list(G_full.nodes())
     terminals_ids = [n for n in full_nodes_list if 'Domain' in G_full.nodes[n].get('labels', [])]
     sources_ids = [n for n in full_nodes_list if G_full.nodes[n].get('owned') == True or 'Compromised' in G_full.nodes[n].get('labels', [])]
         
     # 3. Extraction du sous-graphe d'attaque pertinent
     print("[*] Extraction du sous-graphe d'attaque...")
-    G = extract_attack_subgraph(G_full, sources_ids, terminals_ids, max_hops=8)
-    
+    G = extract_attack_subgraph(G_full, sources_ids, terminals_ids, max_hops=18)
+    print(G.adj)
     nodes_list = list(G.nodes())
     node_to_idx = {n: i for i, n in enumerate(nodes_list)}
     num_nodes = len(nodes_list)
