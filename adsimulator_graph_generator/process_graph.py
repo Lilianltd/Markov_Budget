@@ -27,20 +27,42 @@ def load_jsonl(filepath):
 
 def extract_attack_subgraph(G, source_nodes, target_nodes, max_hops=8):
     """
-    Extrait le sous-graphe des chemins possibles entre les sources et les cibles.
+    Uses Bidirectional BFS to mathematically guarantee extraction of 
+    EVERY node and edge that participates in a path from a source to a target 
+    within the max_hops limit. 
     """
     valid_nodes = set()
+    
+    # 1. Forward BFS: Find shortest distances from ANY source to all nodes
+    dist_from_sources = {}
     for s in source_nodes:
-        # Parcours BFS limité à max_hops pour trouver les chemins vers les terminaux
-        paths = nx.single_source_shortest_path_length(G, s, cutoff=max_hops)
-        for node in paths:
-            if nx.has_path(G, node, target_nodes[0]): # Vérification basique de connectivité vers une cible
+        # Get distances from this specific source (up to max_hops)
+        lengths = nx.single_source_shortest_path_length(G, s, cutoff=max_hops)
+        for node, d in lengths.items():
+            # Keep the shortest distance found so far from any source
+            if node not in dist_from_sources or d < dist_from_sources[node]:
+                dist_from_sources[node] = d
+                
+    # 2. Backward BFS: Find shortest distances from all nodes to ANY target
+    G_rev = G.reverse(copy=False)
+    dist_to_targets = {}
+    for t in target_nodes:
+        # Get distances from this specific target backwards (up to max_hops)
+        lengths = nx.single_source_shortest_path_length(G_rev, t, cutoff=max_hops)
+        for node, d in lengths.items():
+            # Keep the shortest distance found so far to any target
+            if node not in dist_to_targets or d < dist_to_targets[node]:
+                dist_to_targets[node] = d
+                
+    # 3. Intersection: If Distance(Source -> Node) + Distance(Node -> Target) <= max_hops, 
+    # it is mathematically part of the attack path.
+    for node, d_S in dist_from_sources.items():
+        if node in dist_to_targets:
+            d_T = dist_to_targets[node]
+            if d_S + d_T <= max_hops:
                 valid_nodes.add(node)
                 
-    # On garde toujours au moins nos sources et cibles
-    valid_nodes.update(source_nodes)
-    valid_nodes.update(target_nodes)
-    
+    # 4. Extract the perfect subgraph
     return G.subgraph(valid_nodes).copy()
 
 def build_transition_matrix(edges, num_nodes):
@@ -83,7 +105,7 @@ def process_and_save_dataset(jsonl_path, out_json_path):
     nodes_data, edges_data = load_jsonl(jsonl_path)
     
     # 1. Construction du graphe global
-    G_full = nx.Graph()
+    G_full = nx.DiGraph()
     for n in nodes_data:
         node_id = str(n['id'])
         G_full.add_node(node_id, labels=n.get('labels', []), **n.get('properties', {}))
