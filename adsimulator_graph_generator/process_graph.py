@@ -100,28 +100,60 @@ def evaluate_subgraph_risk(alloc, T, source_nodes, target_nodes, iterations=10):
         
     return float(np.sum(state[target_nodes]))
 
-def process_and_save_dataset(jsonl_path, out_json_path):
-    print(f"[*] Processing {jsonl_path}...")
+def build_graph(jsonl_path) -> nx.digraph:
     nodes_data, edges_data = load_jsonl(jsonl_path)
-    
     G_full = nx.DiGraph()
-    for n in nodes_data:
-        node_id = str(n['id'])
-        G_full.add_node(node_id, labels=n.get('labels', []), **n.get('properties', {}))
-
+    # Liste complète (incluant les liens pour l'abus de GPO)
+    ATTACK_EDGES = [
+        'MemberOf', 'TrustedBy',
+        'GenericAll', 'GenericWrite', 'WriteOwner', 'Owns', 
+        'WriteDacl', 'AddMember', 'ForceChangePassword', 'AllExtendedRights',
+        'AdminTo', 'HasSession', 'CanRDP', 'CanPSRemote',
+        'AllowedToDelegate', 'AllowedToAct', 'ExecuteDCOM', 'SyncLAPSPassword',
+        'GpLink', 'Contains'
+    ]
     for e in edges_data:
+        rel_type = e['label']
+        
+        if rel_type not in ATTACK_EDGES:
+            continue
+            
         u = str(e['start']['id'])
         v = str(e['end']['id'])
-        G_full.add_edge(u, v, type=e['label'], **e.get('properties', {}))
+        props = e.get('properties', {})
+        G_full.add_edge(u, v, type=rel_type, **props)
+    return G_full
 
-    #TODO In fact the graph can be not linking the user to the domain admin
+def process_and_save_dataset(jsonl_path, out_json_path):
+    print(f"[*] Processing {jsonl_path}...")
+    G_full = build_graph(jsonl_path)
+    breakpoint()
+    # 2. Identification Globale
     full_nodes_list = list(G_full.nodes())
-    terminals_ids = [n for n in full_nodes_list if 'Domain' in G_full.nodes[n].get('labels', [])]
-    sources_ids = [n for n in full_nodes_list if G_full.nodes[n].get('owned') == True or 'Compromised' in G_full.nodes[n].get('labels', [])]
+    
+    terminals_ids = []
+    sources_ids = []
+
+    for n in full_nodes_list:
+        labels = G_full.nodes[n].get('labels', [])
+        props = G_full.nodes[n].get('properties', {})
+        name = props.get('name', '').upper()
         
+        # --- CIBLES (Terminals) ---
+        # 1. Le groupe Domain Admins (Cible principale des chemins Neo4j)
+        if 'Group' in labels and 'DOMAIN ADMINS' in name:
+            terminals_ids.append(n)
+        # 2. Les ordinateurs HighValue (ex: Domain Controllers)
+        elif 'Computer' in labels and props.get('highvalue') == True:
+            terminals_ids.append(n)
+            
+        # --- SOURCES (Attaquants) ---
+        if props.get('owned') == True or 'Compromised' in labels:
+            sources_ids.append(n)
+  
     # 3. Extraction du sous-graphe d'attaque pertinent
     print("[*] Extraction du sous-graphe d'attaque...")
-    G = extract_attack_subgraph(G_full, sources_ids, terminals_ids, max_hops=18)
+    G = extract_attack_subgraph(G_full, sources_ids, terminals_ids, max_hops=30)
     print(G.adj)
     nodes_list = list(G.nodes())
     node_to_idx = {n: i for i, n in enumerate(nodes_list)}

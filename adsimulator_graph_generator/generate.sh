@@ -46,7 +46,27 @@ generate
 exit
 EOF
 
+
     echo "[*] Step 4: Exporting Graph to JSON..."
+    sudo rm -f /tmp/export.json 
+    /usr/bin/cypher-shell -u neo4j -p password 'CALL apoc.export.json.query("MATCH p=shortestPath((n:User)-[*1..]->(m:Group {name: \"DOMAIN ADMINS@INSTANCE1.LOCAL\"})) WHERE NOT n=m RETURN p", "/tmp/export.json", {useTypes:true});'
+
+    echo "[*] Step 5: Formatting and Generating .npy dataset arrays..."
+    if [ -f "/tmp/export.json" ]; then
+        INSTANCE_JSON="$DATASET_DIR/graph_shortest_path${i}.json"
+        sudo mv /tmp/export.json "$INSTANCE_JSON"
+        sudo chown lilian:lilian "$INSTANCE_JSON"
+    fi
+    sudo rm -f /tmp/export.json 
+    /usr/bin/cypher-shell -u neo4j -p password "CALL apoc.export.json.query(\"MATCH p=shortestPath((n)-[*1..15]->(m:Group {name: 'DOMAIN ADMINS@INSTANCE1.LOCAL'})) WHERE n.owned = true AND NOT n=m RETURN p\", \"/tmp/export.json\", {useTypes:true});"
+    echo "[*] Step 5: Formatting and Generating .npy dataset arrays..."
+    if [ -f "/tmp/export.json" ]; then
+        INSTANCE_JSON="$DATASET_DIR/graph_corrupt_domain${i}.json"
+        sudo mv /tmp/export.json "$INSTANCE_JSON"
+        sudo chown lilian:lilian "$INSTANCE_JSON"
+    fi
+
+
     sudo rm -f /tmp/export.json 
     /usr/bin/cypher-shell -u neo4j -p password "CALL apoc.export.json.all('/tmp/export.json', {useTypes:true});"
 
@@ -63,6 +83,7 @@ EOF
     else
         echo "[-] ERROR: Export failed. Check Neo4j."
     fi
+
 done
 
 echo "[+] ALL DONE"
