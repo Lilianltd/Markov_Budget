@@ -4,6 +4,7 @@ import numpy as np
 import os
 import sys
 import random
+from random_best_alloc import *
 from datetime import datetime
 
 REMEDIATION_EFFORT = {
@@ -12,6 +13,63 @@ REMEDIATION_EFFORT = {
     'ForceChangePassword': 6, 'WriteDacl': 7, 'WriteOwner': 7, 
     'GenericAll': 8, 'AllExtendedRights': 8, 'MemberOf': 9, 'Trust': 10
 }
+
+
+def export_complete_attack_instance(G_full, nodes_list, edge_list, features, 
+    node_classes, edge_classes, terminals, sources, 
+    best_allocation, best_risk, baseline_risk, target_budget, output_path
+):
+    """
+    Exports the subgraph topology, node-level attributes, and the 
+    Monte Carlo optimization results in a format for ML training.
+    """
+    num_nodes = len(nodes_list)
+    
+    unique_edge_types = sorted(list(set(edge_classes)))
+    edge_type_to_idx = {t: i for i, t in enumerate(unique_edge_types)}
+    edge_attr = [edge_type_to_idx[t] for t in edge_classes]
+
+    node_registry = {}
+    for i, node_id in enumerate(nodes_list):
+        full_data = G_full.nodes[node_id]
+        
+        node_registry[i] = {
+            "original_id": node_id,
+            "labels": node_classes[i],
+            "features_vector": features[i],
+            "is_terminal": i in terminals,
+            "is_source": i in sources,
+            "best_allocation_weight": float(best_allocation[i]),
+            "properties": {k: v for k, v in full_data.items() if k != 'labels'}
+        }
+
+    # 3. Create the JSON Object
+    export_data = {
+        "metadata": {
+            "nodes_count": num_nodes,
+            "edges_count": len(edge_list),
+            "budget_limit": float(target_budget),
+            "baseline_risk":baseline_risk,
+        },
+        "subgraph_topology": {
+            "edge_index": edge_list,
+            "edge_type_indices": edge_attr,
+            "edge_type_map": edge_type_to_idx,
+            "is_directed": True
+        },
+        "ml_targets": {
+            "y_best_alloc": best_allocation.tolist(),
+            "j_star_risk": float(best_risk),
+            "baseline_risk": float(baseline_risk)
+        },
+        "node_registry": node_registry
+    }
+
+    # 4. Save to file
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(export_data, f, indent=4, ensure_ascii=False)
+    
+    print(f"[+] Export complete: {output_path}")
 
 def load_jsonl(filepath):
     nodes, edges = [], []
@@ -24,6 +82,25 @@ def load_jsonl(filepath):
             elif data['type'] == 'relationship':
                 edges.append(data)
     return nodes, edges
+
+def find_viable_sources(G, terminals, max_hops=30):
+    """
+    Identifie les nœuds (User/Computer) qui ont un chemin réel 
+    vers les terminaux dans la limite de max_hops.
+    """
+    viable_sources = set()
+    G_rev = G.reverse(copy=True)
+    
+    for target in terminals:
+        # On cherche tous les nœuds pouvant atteindre la cible (BFS arrière)
+        reachable = nx.single_source_shortest_path_length(G_rev, target, cutoff=max_hops)
+        for node_id, dist in reachable.items():
+            labels = G.nodes[node_id].get('labels', [])
+            # On considère comme source potentielle tout User ou Computer capable d'atteindre la cible
+            if 'User' in labels:
+                viable_sources.add(node_id)
+                
+    return list(viable_sources)
 
 def extract_attack_subgraph(G, source_nodes, target_nodes, max_hops=8):
     """
@@ -65,64 +142,61 @@ def extract_attack_subgraph(G, source_nodes, target_nodes, max_hops=8):
     # 4. Extract the perfect subgraph
     return G.subgraph(valid_nodes).copy()
 
-def build_transition_matrix(edges, num_nodes):
-    """Construit la matrice de transition probabiliste T."""
-    T = np.zeros((num_nodes, num_nodes))
-    if not edges: return T
+def build_graph(jsonl_path) -> nx.DiGraph:
+    nodes_data, edges_data = load_jsonl(jsonl_path)
+    G_full = nx.DiGraph()
     
-    sources = [e[0] for e in edges]
-    targets = [e[1] for e in edges]
-    
-    out_degrees = np.bincount(sources, minlength=num_nodes)
-    out_degrees[out_degrees == 0] = 1.0 
-    
-    T[sources, targets] = 1.0 / out_degrees[sources]
-    return T
+    # 1. Ajout des nœuds avec leurs métadonnées
+    for n in nodes_data:
+        node_id = str(n['id'])
+        G_full.add_node(
+            node_id, 
+            labels=n.get('labels', []), 
+            properties=n.get('properties', {})
+        )
 
-def generate_subgraph_allocation(num_nodes, target_budget):
-    """Génère une allocation aléatoire via distribution de Dirichlet."""
-    alpha = np.ones(num_nodes) * 0.1 
-    raw_alloc = np.random.dirichlet(alpha) * target_budget
-    return np.clip(raw_alloc, 0.0, 1.0)
+    # 2. Ajout des arêtes filtrées
+    ATTACK_EDGES = [
+        'MemberOf', 'TrustedBy', 'GenericAll', 'GenericWrite', 
+        'WriteOwner', 'Owns', 'WriteDacl', 'AddMember', 
+        'ForceChangePassword', 'AllExtendedRights', 'AdminTo', 
+        'HasSession', 'CanRDP', 'CanPSRemote', 'AllowedToDelegate', 
+        'AllowedToAct', 'ExecuteDCOM', 'SyncLAPSPassword', 'GpLink', 'Contains'
+    ]
+    for e in edges_data:
+        rel_type = e['label']
+        if rel_type in ATTACK_EDGES:
+            u = str(e['start']['id'])
+            v = str(e['end']['id'])
+            props = e.get('properties', {})
+            G_full.add_edge(u, v, type=rel_type, **props)
+            
+    return G_full
 
-def evaluate_subgraph_risk(alloc, T, source_nodes, target_nodes, iterations=10):
-    """Évaluation du risque (probabilité d'atteindre les cibles) en fonction des défenses."""
-    state = np.zeros(len(alloc))
-    state[source_nodes] = 1.0
-    
-    # L'allocation réduit la probabilité de transition
-    T_defended = T.copy()
-    for i in range(len(alloc)):
-        T_defended[:, i] *= max(0, 1.0 - alloc[i])
-        
-    for _ in range(iterations):
-        state = state @ T_defended
-        
-    return float(np.sum(state[target_nodes]))
+def get_domain_group(G):
+    full_nodes_list = list(G.nodes())
+    terminals_ids = []
+
+    for n in full_nodes_list:
+        labels = G.nodes[n].get('labels', [])
+        props = G.nodes[n].get('properties', {})
+        if 'Group' in labels and props.get('highvalue') == True: #found target groups admin
+            terminals_ids.append(n)
+    return terminals_ids
 
 def process_and_save_dataset(jsonl_path, out_json_path):
     print(f"[*] Processing {jsonl_path}...")
-    nodes_data, edges_data = load_jsonl(jsonl_path)
+    G_full = build_graph(jsonl_path)
+    terminals_ids = get_domain_group(G_full)
+    sources_ids = find_viable_sources(G_full, terminals_ids, max_hops=30)
     
-    G_full = nx.DiGraph()
-    for n in nodes_data:
-        node_id = str(n['id'])
-        G_full.add_node(node_id, labels=n.get('labels', []), **n.get('properties', {}))
-
-    for e in edges_data:
-        u = str(e['start']['id'])
-        v = str(e['end']['id'])
-        G_full.add_edge(u, v, type=e['label'], **e.get('properties', {}))
-
-    #TODO In fact the graph can be not linking the user to the domain admin
-    full_nodes_list = list(G_full.nodes())
-    terminals_ids = [n for n in full_nodes_list if 'Domain' in G_full.nodes[n].get('labels', [])]
-    sources_ids = [n for n in full_nodes_list if G_full.nodes[n].get('owned') == True or 'Compromised' in G_full.nodes[n].get('labels', [])]
-        
-    # 3. Extraction du sous-graphe d'attaque pertinent
     print("[*] Extraction du sous-graphe d'attaque...")
-    G = extract_attack_subgraph(G_full, sources_ids, terminals_ids, max_hops=18)
-    print(G.adj)
+    G = extract_attack_subgraph(G_full, sources_ids, terminals_ids, max_hops=30)
+
+    if G.number_of_nodes() == 0:
+        print("[!] Aucune surface d'attaque détectée. Fin du traitement.")
+        return
+    
     nodes_list = list(G.nodes())
     node_to_idx = {n: i for i, n in enumerate(nodes_list)}
     num_nodes = len(nodes_list)
@@ -133,18 +207,17 @@ def process_and_save_dataset(jsonl_path, out_json_path):
     # 4. Features & Classes
     features = []
     node_classes = []
-    for i, n in enumerate(nodes_list):
+    for _, n in enumerate(nodes_list):
         d = G.nodes[n]
         lbls = d.get('labels', [])
         node_classes.append(lbls) # Sauvegarde des classes de noeuds
         is_computer = 1.0 if 'Computer' in lbls else 0.0
         is_user = 1.0 if 'User' in lbls else 0.0
         is_group = 1.0 if 'Group' in lbls else 0.0
-        is_compromised = 1.0 if d.get('Compromised') == True else 0.0
         is_ou = 1.0 if d.get('OU') == True else 0.0
         is_gpo = 1.0 if d.get('GPO') == True else 0.0
         is_domain = 1.0 if d.get('Domain') == True else 0.0
-        features.append([is_computer, is_user, is_group, is_compromised, is_ou, is_gpo, is_domain])
+        features.append([is_computer, is_user, is_group, is_ou, is_gpo, is_domain])
 
     edge_list = []
     edge_classes = []
@@ -156,56 +229,15 @@ def process_and_save_dataset(jsonl_path, out_json_path):
     target_budget = 5.0
     mc_iterations = 1000
     print(f"[*] Lancement Monte Carlo ({mc_iterations} itérations) pour l'allocation optimale...")
-    
     T = build_transition_matrix(edge_list, num_nodes)
     baseline_risk = evaluate_subgraph_risk(np.zeros(num_nodes), T, sources, terminals)
-    
-    best_allocation = np.zeros(num_nodes)
-    best_risk = baseline_risk
-    
-    for i in range(1, mc_iterations + 1):
-        current_alloc = generate_subgraph_allocation(num_nodes, target_budget)
-        current_risk = evaluate_subgraph_risk(current_alloc, T, sources, terminals)
-        
-        if current_risk < best_risk:
-            best_risk = current_risk
-            best_allocation = current_alloc
+    best_allocation, best_risk = find_best_alloc(num_nodes, baseline_risk, mc_iterations, target_budget, T, sources, terminals)
 
     print(f"[+] Risque initial : {baseline_risk:.4f} | Risque optimisé (J_star) : {best_risk:.4f}")
 
-    # 6. Construction de la structure JSON (avec ajout des classes)
-    instance = {
-      "topology_type": "adsimulator_graph",
-      "B": target_budget,
-      "H": 8,
-      "graph": {
-        "nodes": list(range(num_nodes)),
-        "edges": edge_list,
-        "node_classes": node_classes,
-        "edge_classes": edge_classes,
-        "is_directed": True
-      },
-      "x": features,
-      "y": best_allocation.tolist(),
-      "J_star": float(best_risk),
-      "terminals": terminals,
-      "repairable_nodes": [i for i in range(num_nodes) if i not in terminals],
-      "n_nodes": num_nodes,
-      "n_edges": len(edge_list)
-    }
-
-    dataset = {
-      "metadata": {
-        "generated_at": datetime.now().isoformat(),
-        "n_instances": 1,
-        "topology": "Active Directory"
-      },
-      "instances": [instance]
-    }
-
-    with open(out_json_path, 'w') as f:
-        json.dump(dataset, f, indent=2)
-    print(f"[+] Dataset JSON sauvegardé dans {out_json_path}")
+    export_complete_attack_instance(G_full, nodes_list, edge_list, features, 
+        node_classes, edge_classes, terminals, sources, 
+        best_allocation, best_risk, baseline_risk, target_budget, out_json_path)
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
