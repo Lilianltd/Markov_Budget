@@ -4,6 +4,7 @@ import numpy as np
 import os
 import sys
 import random
+from random_best_alloc import *
 from datetime import datetime
 
 REMEDIATION_EFFORT = {
@@ -84,41 +85,6 @@ def extract_attack_subgraph(G, source_nodes, target_nodes, max_hops=8):
     # 4. Extract the perfect subgraph
     return G.subgraph(valid_nodes).copy()
 
-def build_transition_matrix(edges, num_nodes):
-    """Construit la matrice de transition probabiliste T."""
-    T = np.zeros((num_nodes, num_nodes))
-    if not edges: return T
-    
-    sources = [e[0] for e in edges]
-    targets = [e[1] for e in edges]
-    
-    out_degrees = np.bincount(sources, minlength=num_nodes)
-    out_degrees[out_degrees == 0] = 1.0 
-    
-    T[sources, targets] = 1.0 / out_degrees[sources]
-    return T
-
-def generate_subgraph_allocation(num_nodes, target_budget):
-    """Génère une allocation aléatoire via distribution de Dirichlet."""
-    alpha = np.ones(num_nodes) * 0.1 
-    raw_alloc = np.random.dirichlet(alpha) * target_budget
-    return np.clip(raw_alloc, 0.0, 1.0)
-
-def evaluate_subgraph_risk(alloc, T, source_nodes, target_nodes, iterations=10):
-    """Évaluation du risque (probabilité d'atteindre les cibles) en fonction des défenses."""
-    state = np.zeros(len(alloc))
-    state[source_nodes] = 1.0
-    
-    # L'allocation réduit la probabilité de transition
-    T_defended = T.copy()
-    for i in range(len(alloc)):
-        T_defended[:, i] *= max(0, 1.0 - alloc[i])
-        
-    for _ in range(iterations):
-        state = state @ T_defended
-        
-    return float(np.sum(state[target_nodes]))
-
 def build_graph(jsonl_path) -> nx.DiGraph:
     nodes_data, edges_data = load_jsonl(jsonl_path)
     G_full = nx.DiGraph()
@@ -166,9 +132,9 @@ def process_and_save_dataset(jsonl_path, out_json_path):
     G_full = build_graph(jsonl_path)
     terminals_ids = get_domain_group(G_full)
     sources_ids = find_viable_sources(G_full, terminals_ids, max_hops=30)
+    
     print("[*] Extraction du sous-graphe d'attaque...")
     G = extract_attack_subgraph(G_full, sources_ids, terminals_ids, max_hops=30)
-    print(G.adj)
     nodes_list = list(G.nodes())
     node_to_idx = {n: i for i, n in enumerate(nodes_list)}
     num_nodes = len(nodes_list)
@@ -179,7 +145,7 @@ def process_and_save_dataset(jsonl_path, out_json_path):
     # 4. Features & Classes
     features = []
     node_classes = []
-    for i, n in enumerate(nodes_list):
+    for _, n in enumerate(nodes_list):
         d = G.nodes[n]
         lbls = d.get('labels', [])
         node_classes.append(lbls) # Sauvegarde des classes de noeuds
