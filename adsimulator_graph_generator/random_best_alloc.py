@@ -36,3 +36,16 @@ def evaluate_subgraph_risk(alloc, T, source_nodes, target_nodes, iterations=10):
         state = state @ T_defended
         
     return float(np.sum(state[target_nodes]))
+
+def find_best_alloc(num_nodes, baseline_risk, mc_iterations, target_budget, T, sources, terminals):
+    best_allocation = np.zeros(num_nodes)
+    best_risk = baseline_risk
+    
+    for i in range(1, mc_iterations + 1):
+        current_alloc = generate_subgraph_allocation(num_nodes, target_budget)
+        current_risk = evaluate_subgraph_risk(current_alloc, T, sources, terminals)
+        
+        if current_risk < best_risk:
+            best_risk = current_risk
+            best_allocation = current_alloc
+    return best_allocation, best_risk

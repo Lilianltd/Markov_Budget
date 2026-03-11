@@ -135,6 +135,11 @@ def process_and_save_dataset(jsonl_path, out_json_path):
     
     print("[*] Extraction du sous-graphe d'attaque...")
     G = extract_attack_subgraph(G_full, sources_ids, terminals_ids, max_hops=30)
+
+    if G.number_of_nodes() == 0:
+        print("[!] Aucune surface d'attaque détectée. Fin du traitement.")
+        return
+    
     nodes_list = list(G.nodes())
     node_to_idx = {n: i for i, n in enumerate(nodes_list)}
     num_nodes = len(nodes_list)
@@ -152,11 +157,10 @@ def process_and_save_dataset(jsonl_path, out_json_path):
         is_computer = 1.0 if 'Computer' in lbls else 0.0
         is_user = 1.0 if 'User' in lbls else 0.0
         is_group = 1.0 if 'Group' in lbls else 0.0
-        is_compromised = 1.0 if d.get('Compromised') == True else 0.0
         is_ou = 1.0 if d.get('OU') == True else 0.0
         is_gpo = 1.0 if d.get('GPO') == True else 0.0
         is_domain = 1.0 if d.get('Domain') == True else 0.0
-        features.append([is_computer, is_user, is_group, is_compromised, is_ou, is_gpo, is_domain])
+        features.append([is_computer, is_user, is_group, is_ou, is_gpo, is_domain])
 
     edge_list = []
     edge_classes = []
@@ -168,20 +172,9 @@ def process_and_save_dataset(jsonl_path, out_json_path):
     target_budget = 5.0
     mc_iterations = 1000
     print(f"[*] Lancement Monte Carlo ({mc_iterations} itérations) pour l'allocation optimale...")
-    
     T = build_transition_matrix(edge_list, num_nodes)
     baseline_risk = evaluate_subgraph_risk(np.zeros(num_nodes), T, sources, terminals)
-    
-    best_allocation = np.zeros(num_nodes)
-    best_risk = baseline_risk
-    
-    for i in range(1, mc_iterations + 1):
-        current_alloc = generate_subgraph_allocation(num_nodes, target_budget)
-        current_risk = evaluate_subgraph_risk(current_alloc, T, sources, terminals)
-        
-        if current_risk < best_risk:
-            best_risk = current_risk
-            best_allocation = current_alloc
+    best_allocation, best_risk = find_best_alloc(num_nodes, baseline_risk, mc_iterations, target_budget, T, sources, terminals)
 
     print(f"[+] Risque initial : {baseline_risk:.4f} | Risque optimisé (J_star) : {best_risk:.4f}")
 
