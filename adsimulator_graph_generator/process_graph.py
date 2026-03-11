@@ -25,6 +25,25 @@ def load_jsonl(filepath):
                 edges.append(data)
     return nodes, edges
 
+def find_viable_sources(G, terminals, max_hops=30):
+    """
+    Identifie les nœuds (User/Computer) qui ont un chemin réel 
+    vers les terminaux dans la limite de max_hops.
+    """
+    viable_sources = set()
+    G_rev = G.reverse(copy=True)
+    
+    for target in terminals:
+        # On cherche tous les nœuds pouvant atteindre la cible (BFS arrière)
+        reachable = nx.single_source_shortest_path_length(G_rev, target, cutoff=max_hops)
+        for node_id, dist in reachable.items():
+            labels = G.nodes[node_id].get('labels', [])
+            # On considère comme source potentielle tout User ou Computer capable d'atteindre la cible
+            if 'User' in labels:
+                viable_sources.add(node_id)
+                
+    return list(viable_sources)
+
 def extract_attack_subgraph(G, source_nodes, target_nodes, max_hops=8):
     """
     Uses Bidirectional BFS to mathematically guarantee extraction of 
@@ -100,58 +119,53 @@ def evaluate_subgraph_risk(alloc, T, source_nodes, target_nodes, iterations=10):
         
     return float(np.sum(state[target_nodes]))
 
-def build_graph(jsonl_path) -> nx.digraph:
+def build_graph(jsonl_path) -> nx.DiGraph:
     nodes_data, edges_data = load_jsonl(jsonl_path)
     G_full = nx.DiGraph()
-    # Liste complète (incluant les liens pour l'abus de GPO)
+    
+    # 1. Ajout des nœuds avec leurs métadonnées
+    for n in nodes_data:
+        node_id = str(n['id'])
+        G_full.add_node(
+            node_id, 
+            labels=n.get('labels', []), 
+            properties=n.get('properties', {})
+        )
+
+    # 2. Ajout des arêtes filtrées
     ATTACK_EDGES = [
-        'MemberOf', 'TrustedBy',
-        'GenericAll', 'GenericWrite', 'WriteOwner', 'Owns', 
-        'WriteDacl', 'AddMember', 'ForceChangePassword', 'AllExtendedRights',
-        'AdminTo', 'HasSession', 'CanRDP', 'CanPSRemote',
-        'AllowedToDelegate', 'AllowedToAct', 'ExecuteDCOM', 'SyncLAPSPassword',
-        'GpLink', 'Contains'
+        'MemberOf', 'TrustedBy', 'GenericAll', 'GenericWrite', 
+        'WriteOwner', 'Owns', 'WriteDacl', 'AddMember', 
+        'ForceChangePassword', 'AllExtendedRights', 'AdminTo', 
+        'HasSession', 'CanRDP', 'CanPSRemote', 'AllowedToDelegate', 
+        'AllowedToAct', 'ExecuteDCOM', 'SyncLAPSPassword', 'GpLink', 'Contains'
     ]
     for e in edges_data:
         rel_type = e['label']
-        
-        if rel_type not in ATTACK_EDGES:
-            continue
+        if rel_type in ATTACK_EDGES:
+            u = str(e['start']['id'])
+            v = str(e['end']['id'])
+            props = e.get('properties', {})
+            G_full.add_edge(u, v, type=rel_type, **props)
             
-        u = str(e['start']['id'])
-        v = str(e['end']['id'])
-        props = e.get('properties', {})
-        G_full.add_edge(u, v, type=rel_type, **props)
     return G_full
+
+def get_domain_group(G):
+    full_nodes_list = list(G.nodes())
+    terminals_ids = []
+
+    for n in full_nodes_list:
+        labels = G.nodes[n].get('labels', [])
+        props = G.nodes[n].get('properties', {})
+        if 'Group' in labels and props.get('highvalue') == True: #found target groups admin
+            terminals_ids.append(n)
+    return terminals_ids
 
 def process_and_save_dataset(jsonl_path, out_json_path):
     print(f"[*] Processing {jsonl_path}...")
     G_full = build_graph(jsonl_path)
-    breakpoint()
-    # 2. Identification Globale
-    full_nodes_list = list(G_full.nodes())
-    
-    terminals_ids = []
-    sources_ids = []
-
-    for n in full_nodes_list:
-        labels = G_full.nodes[n].get('labels', [])
-        props = G_full.nodes[n].get('properties', {})
-        name = props.get('name', '').upper()
-        
-        # --- CIBLES (Terminals) ---
-        # 1. Le groupe Domain Admins (Cible principale des chemins Neo4j)
-        if 'Group' in labels and 'DOMAIN ADMINS' in name:
-            terminals_ids.append(n)
-        # 2. Les ordinateurs HighValue (ex: Domain Controllers)
-        elif 'Computer' in labels and props.get('highvalue') == True:
-            terminals_ids.append(n)
-            
-        # --- SOURCES (Attaquants) ---
-        if props.get('owned') == True or 'Compromised' in labels:
-            sources_ids.append(n)
-  
-    # 3. Extraction du sous-graphe d'attaque pertinent
+    terminals_ids = get_domain_group(G_full)
+    sources_ids = find_viable_sources(G_full, terminals_ids, max_hops=30)
     print("[*] Extraction du sous-graphe d'attaque...")
     G = extract_attack_subgraph(G_full, sources_ids, terminals_ids, max_hops=30)
     print(G.adj)
