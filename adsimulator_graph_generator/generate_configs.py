@@ -36,6 +36,7 @@ def generate_config(index):
         json.dump(config, f, indent=4)
         
     print(f"[+] Generated config: {filename}")
+    return filename
 
 if __name__ == "__main__":
     idx = sys.argv[1] if len(sys.argv) > 1 else "0"
