@@ -1,0 +1,6 @@
+neo4j
+matplotlib
+networkx
+numpy
+torch
+torch_geometric

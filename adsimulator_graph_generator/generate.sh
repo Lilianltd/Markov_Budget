@@ -1,118 +1,46 @@
-#!/bin/bash
 #!/usr/bin/env bash
-# Use /usr/bin/env bash for better portability across different Linux distros
-
 set -e
 
 # ==============================================================================
-# Configuration & Environment Variables (Override these via environment)
+# Configuration initiale (Installation & Setup)
 # ==============================================================================
-AD_PATH="${AD_PATH:-adsimulator}"
-DATASET_DIR="${DATASET_DIR:-./Dataset}"
-NUM_GRAPHS="${NUM_GRAPHS:-2}"
-
-NEO4J_USER="${NEO4J_USER:-neo4j}"
-NEO4J_PASS="${NEO4J_PASS:-password}"
-CYPHER_SHELL="${CYPHER_SHELL:-cypher-shell}"
+NEO4J_VERSION="5.18.0"
+NEO4J_HOME="./neo4j_local"
+NUM_GRAPHS="${NUM_GRAPHS:-1000}"
 PYTHON_CMD="${PYTHON_CMD:-python3}"
 
-TMP_EXPORT="/tmp/export.json"
-CURRENT_USER=$(id -un)
-CURRENT_GROUP=$(id -gn)
-
-# ==============================================================================
-# Pre-flight Checks
-# ==============================================================================
-if ! command -v "$AD_PATH" &> /dev/null; then
-    echo "[-] Error: Cannot find adsimulator at '$AD_PATH'."
-    echo "    Either activate your environment or set the AD_PATH variable:"
-    echo "    export AD_PATH=/path/to/your/adsimulator"
-    exit 1
+echo "[*] Vérification de l'installation locale de Neo4j..."
+NEO4J_VERSION="5.18.0"
+if [ ! -d "neo4j_local" ]; then
+    wget -q -nc https://neo4j.com/artifact.php?name=neo4j-community-$NEO4J_VERSION-unix.tar.gz -O neo4j.tar.gz
+    tar -xzf neo4j.tar.gz
+    mv neo4j-community-$NEO4J_VERSION neo4j_local
+    rm neo4j.tar.gz
 fi
-
-if ! command -v "$CYPHER_SHELL" &> /dev/null; then
-    echo "[-] Error: cypher-shell not found. Please install Neo4j or ensure it is in your PATH."
-    exit 1
+if [ ! -f "neo4j_local/plugins/apoc-$NEO4J_VERSION-core.jar" ]; then
+    wget -q -nc https://github.com/neo4j/apoc/releases/download/$NEO4J_VERSION/apoc-$NEO4J_VERSION-core.jar -P neo4j_local/plugins/
 fi
-
-# Ensure output directory exists
-mkdir -p "$DATASET_DIR"
+CONF_FILE="neo4j_local/conf/neo4j.conf"
+APOC_CONF="neo4j_local/conf/apoc.conf"
+if ! grep -q "dbms.security.procedures.unrestricted=apoc.\*" "$CONF_FILE"; then
+    echo "dbms.security.procedures.unrestricted=apoc.*" >> "$CONF_FILE"
+    echo "apoc.export.file.enabled=true" > "$APOC_CONF"
+    ./neo4j_local/bin/neo4j-admin dbms set-initial-password "password"
+fi
+echo "[+] Environnement Neo4j prêt !"
 
 # ==============================================================================
-# Main Loop
+# Lancement de la génération via le moteur Python (adsim_utils.py)
 # ==============================================================================
-for i in $(seq 1 "$NUM_GRAPHS"); do
-    echo "================================================="
-    echo "[*] Processing Dataset Instance $i / $NUM_GRAPHS"
-    echo "================================================="
-    
-    echo "[*] Step 1: Generating AD Simulator Configuration..."
-    "$PYTHON_CMD" generate_configs.py "$i"
+echo "[*] Lancement de la pipeline de génération..."
 
-    echo "[*] Step 2: Restarting Neo4j Service to clear state..."
-    # Requires sudo privileges to restart the service
-    sudo systemctl restart neo4j
-
-    echo "[*] Waiting for Neo4j Bolt (Port 7687) to wake up..."
-    # Use native bash /dev/tcp instead of 'nc' to ensure it works on every Linux
-    while ! (echo > /dev/tcp/localhost/7687) >/dev/null 2>&1; do   
-      sleep 2
-      echo -n "."
-    done
-    echo -e "\n[+] Neo4j is online!"
-
-    echo "[*] Step 3: Running adsimulator Generation..."
-    "$AD_PATH" <<EOF
-connect
-setdomain INSTANCE${i}.LOCAL
-setparams ./Dataset/config/adsimulator_config_${i}.json
-generate
-exit
-EOF
-
-    echo "[*] Step 4: Exporting Graph to JSON..."
-    
-    # --- Query 1: Shortest Path for Domain Admins ---
-    sudo rm -f "$TMP_EXPORT" 
-    # Notice the bug fix here: INSTANCE1 is now INSTANCE${i}
-    "$CYPHER_SHELL" -u "$NEO4J_USER" -p "$NEO4J_PASS" "CALL apoc.export.json.query(\"MATCH p=shortestPath((n:User)-[*1..]->(m:Group {name: \\\"DOMAIN ADMINS@INSTANCE${i}.LOCAL\\\"})) WHERE NOT n=m RETURN p\", \"$TMP_EXPORT\", {useTypes:true});"
-
-    echo "[*] Step 5a: Formatting Shortest Path dataset..."
-    if [ -f "$TMP_EXPORT" ]; then
-        INSTANCE_JSON="$DATASET_DIR/graph_shortest_path${i}.json"
-        sudo mv "$TMP_EXPORT" "$INSTANCE_JSON"
-        sudo chown "$CURRENT_USER":"$CURRENT_GROUP" "$INSTANCE_JSON"
-    fi
-
-    # --- Query 2: Corrupted Domain ---
-    sudo rm -f "$TMP_EXPORT" 
-    "$CYPHER_SHELL" -u "$NEO4J_USER" -p "$NEO4J_PASS" "CALL apoc.export.json.query(\"MATCH p=shortestPath((n:Compromised)-[*1..]->(m:Group {name: \\\"DOMAIN ADMINS@INSTANCE${i}.LOCAL\\\"})) WHERE NOT n=m RETURN p\", \"$TMP_EXPORT\", {useTypes:true});"    
-    
-    echo "[*] Step 5b: Formatting Corrupted Domain dataset..."
-    if [ -f "$TMP_EXPORT" ]; then
-        INSTANCE_JSON="$DATASET_DIR/graph_corrupt_domain${i}.json"
-        sudo mv "$TMP_EXPORT" "$INSTANCE_JSON"
-        sudo chown "$CURRENT_USER":"$CURRENT_GROUP" "$INSTANCE_JSON"
-    fi
-
-    # --- Query 3: Full Graph Export ---
-    sudo rm -f "$TMP_EXPORT" 
-    "$CYPHER_SHELL" -u "$NEO4J_USER" -p "$NEO4J_PASS" "CALL apoc.export.json.all('$TMP_EXPORT', {useTypes:true});"
-
-    echo "[*] Step 5c: Formatting and Generating .npy dataset arrays..."
-    if [ -f "$TMP_EXPORT" ]; then
-        INSTANCE_JSON="$DATASET_DIR/graph_${i}.json"
-        sudo mv "$TMP_EXPORT" "$INSTANCE_JSON"
-        sudo chown "$CURRENT_USER":"$CURRENT_GROUP" "$INSTANCE_JSON"
-        
-        # Launch python post-processor
-        "$PYTHON_CMD" process_graph.py "$INSTANCE_JSON" "$DATASET_DIR/graph_${i}"
-        
-        echo "[+] SUCCESS: Post-processed Graph $i saved to $DATASET_DIR"
-    else
-        echo "[-] ERROR: Export failed. Check Neo4j."
-    fi
-
-done
+# On appelle simplement la fonction Python en boucle !
+"$PYTHON_CMD" -c "
+import src.adsim_utils as adsim_utils
+NUM_GRAPHS = $NUM_GRAPHS
+for i in range(1, NUM_GRAPHS + 1):
+    adsim_utils.run_pipeline(i)
+print('\n[+] GÉNÉRATION TERMINÉE !')
+"
 
 echo "[+] ALL DONE"

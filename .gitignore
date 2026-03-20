@@ -1,2 +1,4 @@
 /adsimulator_graph_generator/Dataset/*
+!/adsimulator_graph_generator/Dataset/dataset_1
 *.pyc
+neo4j_local
