@@ -4,4 +4,3 @@ networkx
 numpy
 torch
 torch_geometric
-socket

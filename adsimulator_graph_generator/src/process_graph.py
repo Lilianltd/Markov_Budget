@@ -243,7 +243,7 @@ def process_and_save_dataset(jsonl_path : str, out_json_path: str):
     print(f"[*] Lancement Monte Carlo ({mc_iterations} itérations) pour l'allocation optimale...")
     T = build_transition_matrix(edge_list, num_nodes)
     baseline_risk = evaluate_subgraph_risk(np.zeros(num_nodes), T, sources, terminals)
-    best_allocation, best_risk = find_best_alloc(num_nodes, baseline_risk, mc_iterations, target_budget, T, sources, terminals)
+    best_allocation, best_risk = find_best_alloc(num_nodes, mc_iterations, target_budget, T, sources, terminals)
 
     print(f"[+] Risque initial : {baseline_risk:.4f} | Risque optimisé (J_star) : {best_risk:.4f}")
 
