@@ -5,10 +5,10 @@ import socket
 import shutil
 import subprocess
 from neo4j import GraphDatabase
-from generate_configs import generate_config
-from process_graph import *
+from src.generate_configs import generate_config
+from src.process_graph import *
 
-def wait_for_port(port, host='localhost', timeout=60):
+def wait_for_port(port, host='localhost', timeout=60) -> bool:
     start_time = time.time()
     while time.time() - start_time < timeout:
         try:
@@ -18,7 +18,7 @@ def wait_for_port(port, host='localhost', timeout=60):
             time.sleep(2)
     return False
 
-def run_pipeline(instance_id):
+def run_pipeline(instance_id : int):
     print(f"\n=====================================")
     print(f"[*] Traitement de l'Instance {instance_id}")
     print(f"=====================================")

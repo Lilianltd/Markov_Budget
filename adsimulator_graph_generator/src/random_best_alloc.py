@@ -1,12 +1,11 @@
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
-import json
 from matplotlib.patches import Patch
 
 from typing import List, Tuple, Sequence
 
-def build_transition_matrix(edges : List[Tuple[int, int]], num_nodes: int) -> np.ndarray:
+def build_transition_matrix(edges : List[Tuple[str, str]], num_nodes: int) -> np.ndarray:
     """Builds the probabilistic transition matrix T."""
     T = np.zeros((num_nodes, num_nodes))
     if not edges: return T
@@ -42,7 +41,7 @@ def mutate_allocation(alloc : np.ndarray, target_budget : int, mutation_rate=0.1
         
     return np.clip(new_alloc, 0.0, 1.0)
 
-def evaluate_subgraph_risk(alloc : np.ndarray, T : np.ndarray, source_nodes : Sequence[int], target_nodes: Sequence[int], iterations=10):
+def evaluate_subgraph_risk(alloc : np.ndarray, T : np.ndarray, source_nodes : Sequence[str], target_nodes: Sequence[str], iterations=10):
     """Evaluates the probability of attackers reaching the target nodes."""
     state = np.zeros(len(alloc))
     state[source_nodes] = 1.0 / len(source_nodes) # Normalize initial state
@@ -59,7 +58,7 @@ def evaluate_subgraph_risk(alloc : np.ndarray, T : np.ndarray, source_nodes : Se
         
     return float(np.sum(state[target_nodes]))
 
-def find_best_alloc(num_nodes : int, mc_iterations : int, target_budget : float, T, sources : List[int], terminals : List[int]):
+def find_best_alloc(num_nodes : int, mc_iterations : int, target_budget : float, T, sources : List[str], terminals : List[str]):
     """
     Finds the best defensive allocation using an exploratory local search.
     Returns the best allocation, final risk, and the historical progression.
@@ -176,46 +175,3 @@ def plot_single_attack_path(edges, num_nodes, source, target, allocation, node_r
     plt.axis('off')
     plt.tight_layout()
     plt.show()
-
-
-import json
-import numpy as np
-if __name__ == "__main__":
-
-    # 1. Load the data
-    with open('Dataset/graph_1_structured.json', 'r') as f:
-        graph_data = json.load(f)
-
-    num_nodes = graph_data['metadata']['nodes_count']
-    edges = graph_data['subgraph_topology']['edge_index']
-    node_registry = graph_data['node_registry']
-
-    # Build the transition matrix
-    T = build_transition_matrix(edges, num_nodes)
-
-    # Extract best known allocation for colors (using the ones embedded in your JSON)
-    actual_alloc = np.zeros(num_nodes)
-    for i in range(num_nodes):
-        actual_alloc[i] = node_registry[str(i)]['best_allocation_weight']
-
-    # 2. Automatically find ALL Sources and ALL Targets from the JSON registry
-    sources = [int(node_id) for node_id, data in node_registry.items() if data.get('is_source') == True]
-    targets = [int(node_id) for node_id, data in node_registry.items() if data.get('is_terminal') == True]
-
-    print(f"Detected {len(sources)} sources and {len(targets)} targets.")
-    print(f"Total possible source-target combinations to check: {len(sources) * len(targets)}\n")
-
-    # 3. Loop through all combinations and plot them
-    for source in sources:
-        for target in targets:
-            print(f"\n--- Checking route from Source {source} to Target {target} ---")
-            
-            plot_single_attack_path(
-                edges=edges, 
-                num_nodes=num_nodes, 
-                source=source, 
-                target=target, 
-                allocation=actual_alloc, 
-                node_registry=node_registry, 
-                T=T
-            )

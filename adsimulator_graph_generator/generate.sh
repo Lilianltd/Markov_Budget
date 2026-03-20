@@ -36,7 +36,7 @@ echo "[*] Lancement de la pipeline de génération..."
 
 # On appelle simplement la fonction Python en boucle !
 "$PYTHON_CMD" -c "
-import adsim_utils
+import src.adsim_utils as adsim_utils
 NUM_GRAPHS = $NUM_GRAPHS
 for i in range(1, NUM_GRAPHS + 1):
     adsim_utils.run_pipeline(i)

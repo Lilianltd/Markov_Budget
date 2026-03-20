@@ -1,7 +1,7 @@
 import json
 import networkx as nx
 import numpy as np
-from random_best_alloc import *
+from src.random_best_alloc import *
 from typing import Union, Dict, Tuple
 
 REMEDIATION_EFFORT = {
@@ -13,7 +13,7 @@ REMEDIATION_EFFORT = {
 
 
 def export_complete_attack_instance(G_full : nx.DiGraph, 
-                                    nodes_list : Sequence[int], 
+                                    nodes_list : Sequence[str], 
                                     edge_list : Sequence[Tuple[int,int]],
                                     features,
                                     node_classes, 
@@ -89,7 +89,7 @@ def load_jsonl(filepath : str) -> Union[Sequence[Dict], Sequence[Dict]]:
                 edges.append(data)
     return nodes, edges
 
-def find_viable_sources(G : nx.DiGraph, terminals: Sequence[int], max_hops : int = 30) -> Sequence[int]:
+def find_viable_sources(G : nx.DiGraph, terminals: Sequence[str], max_hops : int = 30) -> Sequence[str]:
     """
     Identifie les nœuds (User/Computer) qui ont un chemin réel 
     vers les terminaux dans la limite de max_hops.
@@ -108,7 +108,7 @@ def find_viable_sources(G : nx.DiGraph, terminals: Sequence[int], max_hops : int
                 
     return list(viable_sources)
 
-def extract_attack_subgraph(G, source_nodes, target_nodes, max_hops=8):
+def extract_attack_subgraph(G : nx.DiGraph, source_nodes : Sequence[str], target_nodes, max_hops=8):
     """
     Uses Bidirectional BFS to mathematically guarantee extraction of 
     EVERY node and edge that participates in a path from a source to a target 
@@ -179,7 +179,7 @@ def build_graph(jsonl_path) -> nx.DiGraph:
             
     return G_full
 
-def get_domain_group(G : nx.DiGraph) -> Sequence[int]:
+def get_domain_group(G : nx.DiGraph) -> Sequence[str]:
     full_nodes_list = list(G.nodes())
     terminals_ids = []
 
