@@ -131,39 +131,41 @@ def randomize_distribution(d : dict):
     
     return normalized
 
-def generate_config(index : int) -> str:
+def generate_config(index : int, custom_config : dict = None) -> str:
     """Takes an AD configuration dictionary and randomizes all of its values. Return a path where the config has been savec"""
     # Deep copy so we don't modify your original template dictionary
-    config = copy.deepcopy(BASE_CONFIG)
-    
-    # Define maximum limits for counts so the AD lab doesn't get too large
-    MAX_COUNTS = {
-        'nComputers': 50, 
-        'nUsers': 100, 
-        'nOUs': 15, 
-        'nGroups': 20, 
-        'nGPOs': 10
-    }
-    
-    for section_name, section_data in config.items():
-        for key, value in section_data.items():
-            
-            # 1. Randomize raw counts (nUsers, nComputers, etc.)
-            if key in MAX_COUNTS:
-                section_data[key] = random.randint(1, MAX_COUNTS[key])
-            
-            # 2. Randomize distributions that MUST sum to 100 (OS, Functional Level, etc.)
-            elif isinstance(value, dict) and 'Probability' in key and key not in ['ACLsProbability', 'Trusts']:
-                section_data[key] = randomize_distribution(value)
-            
-            # 3. Randomize independent probabilities inside a dictionary (ACLs, Trusts)
-            elif isinstance(value, dict):
-                section_data[key] = {k: random.randint(0, 100) for k in value.keys()}
-            
-            # 4. Randomize standalone percentages and booleans (0 to 100)
-            elif isinstance(value, int):
-                section_data[key] = random.randint(0, 100)
-                    
+    if not custom_config:
+        config = copy.deepcopy(BASE_CONFIG)        
+        # Define maximum limits for counts so the AD lab doesn't get too large
+        MAX_COUNTS = {
+            'nComputers': 50, 
+            'nUsers': 100, 
+            'nOUs': 15, 
+            'nGroups': 20, 
+            'nGPOs': 10
+        }
+        
+        for section_name, section_data in config.items():
+            for key, value in section_data.items():
+                
+                # 1. Randomize raw counts (nUsers, nComputers, etc.)
+                if key in MAX_COUNTS:
+                    section_data[key] = random.randint(1, MAX_COUNTS[key])
+                
+                # 2. Randomize distributions that MUST sum to 100 (OS, Functional Level, etc.)
+                elif isinstance(value, dict) and 'Probability' in key and key not in ['ACLsProbability', 'Trusts']:
+                    section_data[key] = randomize_distribution(value)
+                
+                # 3. Randomize independent probabilities inside a dictionary (ACLs, Trusts)
+                elif isinstance(value, dict):
+                    section_data[key] = {k: random.randint(0, 100) for k in value.keys()}
+                
+                # 4. Randomize standalone percentages and booleans (0 to 100)
+                elif isinstance(value, int):
+                    section_data[key] = random.randint(0, 100)
+        else:
+            config = custom_config
+                
     filename = f"./Dataset/config/adsimulator_config_{index}.json"
     os.makedirs(f'./Dataset/config/', exist_ok=True)
     with open(filename, "w") as f:

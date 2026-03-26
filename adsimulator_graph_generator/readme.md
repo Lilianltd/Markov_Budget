@@ -15,6 +15,7 @@ The project is modularized into a bash orchestrator and a suite of Python script
 * **`generate_configs.py`**: A configuration randomizer. It generates unique environmental parameters (number of users/computers, RDP access probabilities, ACL vulnerabilities) for every graph iteration to ensure dataset variance.
 * **`process_graph.py`**: The graph parser and ML-formatter. It reads the exported Neo4j JSON, extracts node features (User, Computer, Group, etc.), identifies attacker starting points (Compromised/Owned) and targets (Domain Admins/Computers), and formats the graph for Machine Learning.
 * **`random_best_alloc.py`**: The simulation engine. It converts the graph into a probabilistic transition matrix $T$ and uses Dirichlet distributions and Monte Carlo simulations to find the optimal defense budget allocation ($J^*$) that minimizes the attacker's probability of reaching the target.
+* **`viz_tools.py`**: Some plot function for the graph
 
 ## Prerequisites
 
@@ -32,7 +33,7 @@ pip install networkx numpy neo4j matplotlib
 *(Note: You do **not** need `sudo` privileges or Docker. The script downloads a standalone Neo4j tarball and runs it entirely in user-space).*
 
 ## ⚙️ How to Use
-
+If you make sure adsimulator is installed and runnable (it can be installed only in linux with installer_linux.sh), if not please refer to the notebook
 Simply execute the bash script. You can optionally define the number of graphs you want to generate using an environment variable.
 
 ```bash
@@ -65,8 +66,6 @@ All generated data is saved in the `./Dataset/` directory.
 For every iteration `i`, you will find:
 
 * `config/adsimulator_config_i.json`: The randomized parameters used to generate the AD environment.
-* `graph_shortest_path_i.json`: Raw APOC export of the shortest paths from standard Users to Domain Admins.
-* `graph_corrupt_domain_i.json`: Raw APOC export of the shortest paths from Compromised accounts to Domain Admins.
 * `graph_i_structured.json`: **The final ML-ready file**. This contains:
 * `nodes` and `edges` (IDs and classifications).
 * `features`: Boolean feature arrays for every node (Computer, User, Group, etc.).
@@ -76,4 +75,4 @@ For every iteration `i`, you will find:
 * `best_allocation`: The optimal array of defensive investments across the graph.
 * `best_risk`: The mitigated compromise probability ($J^*$).
 
-* **`AdSimulator_Local.ipynb`** : Un Jupyter Notebook interactif agissant comme une interface visuelle pour le pipeline. Il importe le moteur `adsim_utils.py` pour générer les données étape par étape, et inclut des cellules de visualisation avancées (via `NetworkX` et `Matplotlib`). Il permet d'afficher la topologie de l'Active Directory, de mettre en évidence les chemins d'attaque les plus courts (Shortest Paths) et d'observer visuellement la répartition du budget de défense optimal sur les nœuds critiques.
+* **`AdSimulator_Local.ipynb`** : A jupyter notebook, runnable in colab for non linux user or to avoid installation locally of the libraries. It will clone and get everything from the repository
