@@ -18,7 +18,7 @@ def wait_for_port(port, host='localhost', timeout=60) -> bool:
             time.sleep(2)
     return False
 
-def run_pipeline(instance_id: int):
+def run_pipeline(instance_id: int, custom_config = None):
     print(f"\n=====================================")
     print(f"[*] Traitement de l'Instance {instance_id}")
     print(f"=====================================")
@@ -34,7 +34,7 @@ def run_pipeline(instance_id: int):
     os.makedirs(dataset_dir, exist_ok=True)
 
     # Use absolute path for the config file so ADSimulator doesn't lose it
-    config_filename = generate_config(instance_id)
+    config_filename = generate_config(instance_id, custom_config = custom_config)
     config_abspath = os.path.abspath(config_filename)
 
     # 2. NEO4J STATE MANAGEMENT (Pythonic approach)
