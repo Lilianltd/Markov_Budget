@@ -32,7 +32,11 @@ def run_pipeline(instance_id: int, custom_config = None):
     
     os.makedirs(import_dir, exist_ok=True)
     os.makedirs(dataset_dir, exist_ok=True)
-
+    print("=== DEBUG ===")
+    print("custom_config:", custom_config)
+    print("type:", type(custom_config))
+    print("is None:", custom_config is None)
+    print("================")
     # Use absolute path for the config file so ADSimulator doesn't lose it
     config_filename = generate_config(instance_id, custom_config = custom_config)
     config_abspath = os.path.abspath(config_filename)

@@ -134,7 +134,8 @@ def randomize_distribution(d : dict):
 def generate_config(index : int, custom_config : dict = None) -> str:
     """Takes an AD configuration dictionary and randomizes all of its values. Return a path where the config has been savec"""
     # Deep copy so we don't modify your original template dictionary
-    if not custom_config:
+    config = None
+    if custom_config is None:
         config = copy.deepcopy(BASE_CONFIG)        
         # Define maximum limits for counts so the AD lab doesn't get too large
         MAX_COUNTS = {
@@ -163,8 +164,8 @@ def generate_config(index : int, custom_config : dict = None) -> str:
                 # 4. Randomize standalone percentages and booleans (0 to 100)
                 elif isinstance(value, int):
                     section_data[key] = random.randint(0, 100)
-        else:
-            config = custom_config
+    else:
+        config = copy.deepcopy(custom_config)
                 
     filename = f"./Dataset/config/adsimulator_config_{index}.json"
     os.makedirs(f'./Dataset/config/', exist_ok=True)
